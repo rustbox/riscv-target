@@ -1,6 +1,6 @@
 [package]
 name = "riscv-target"
-version = "0.1.2"
+version = "0.2.0"
 repository = "https://github.com/ilya-epifanov/riscv-target"
 authors = ["Ilya Epifanov <elijah.epifanov@gmail.com>"]
 categories = ["embedded"]
@@ -8,6 +8,5 @@ description = "RISC-V target string manipulation utilities"
 keywords = ["riscv"]
 license = "ISC"
 
-[dependencies]
-regex = "1"
-lazy_static = "1"
+[dev-dependencies]
+test-case = "3.0.0"
