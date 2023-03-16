@@ -65,8 +65,28 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     iter::FromIterator,
+    marker::PhantomData,
 };
 use std::{convert::TryFrom, str::FromStr};
+
+pub mod experiment1;
+pub mod experiment2;
+
+// pub use experiment1::Target1 as Target;
+// pub use experiment2::Target2 as Target;
+pub use Target0 as Target;
+
+pub struct NamingJunk<T>(PhantomData<T>);
+pub struct Versioned<T>(PhantomData<T>);
+pub struct Spec2017;
+
+impl FromStr for NamingJunk<Versioned<Spec2017>> {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!("parse {s}")
+    }
+}
 
 // TODO: how to handle this?
 // "The counters and timers are no longer considered mandatory parts of the standard base
@@ -83,7 +103,7 @@ use std::{convert::TryFrom, str::FromStr};
 //    and/or, would it be cooler to do `Prefixable<{"lp"}, {Base::RV64}, {}>
 
 /// Represents a standard RISC-V ISA target triple
-pub struct Target {
+pub struct Target0 {
     #[deprecated(
         since = "0.2.0",
         note = "extensions are not a single character in width, use [`exts`] instead"
@@ -194,6 +214,27 @@ impl FromIterator<Extension> for Extensions {
 }
 
 impl Extensions {
+    pub fn implied(iset: &ExtName) -> &'static [ExtName] {
+        // static once: sync::Once = sync::Once::new();
+        // static zicsr: Option<ExtName> = None;
+
+        // once.call_once(|| unsafe {
+        //     zicsr.replace(ExtName::StdZ(String::from("Zicsr")));
+        // });
+
+        match iset {
+            ExtName::Std('g') => &[ExtName::Std('i'), ExtName::Std('m')],
+
+            // ExtName::Std('f') => &[ExtName::StdZ(String::from("Zicsr"))],
+            ExtName::Std('d') => &[ExtName::Std('f')],
+            ExtName::Std('q') => &[ExtName::Std('d')],
+
+            ExtName::StdZ(s) if s == "Zam" => &[ExtName::Std('a')],
+
+            _ => &[],
+        }
+    }
+
     /// Remove and return base instruction sets ('i', 'e')
     fn remove_bases(&mut self) -> Vec<Extension> {
         let mut ret = vec![];
@@ -340,7 +381,7 @@ impl Display for ErrType {
     }
 }
 
-impl FromStr for Target {
+impl FromStr for Target0 {
     type Err = ParseError;
 
     fn from_str(target_str: &str) -> Result<Self, Self::Err> {
@@ -410,7 +451,7 @@ impl FromStr for Target {
     }
 }
 
-impl Target {
+impl Target0 {
     pub fn from_target_str(target_str: &str) -> Self {
         target_str.parse().expect("failed to parse target")
     }
@@ -550,7 +591,7 @@ impl From<char> for Extension {
     }
 }
 
-impl ToString for Target {
+impl ToString for Target0 {
     fn to_string(&self) -> String {
         let has_g = self.has_extension('g');
 
@@ -572,7 +613,6 @@ impl ToString for Target {
             }
         }
 
-        // target_exts.part
         let mut bs = false;
 
         {
@@ -622,15 +662,28 @@ impl ToString for Target {
                 _ => true,
             });
 
-            yey.sort();
+            for e in ISET_ORDER.chars() {
+                let mut yey2 = vec![];
 
-            for sext in yey {
-                if bs {
-                    exts.push('_');
+                yey.retain(|yy| {
+                    if yy.starts_with(&format!("s{e}")) {
+                        yey2.push(yy.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                yey2.sort();
+
+                for sext in yey2 {
+                    if bs {
+                        exts.push('_');
+                    }
+                    bs = true;
+                    exts.push('S');
+                    exts.push_str(&sext[1..]);
                 }
-                bs = true;
-                exts.push('S');
-                exts.push_str(&sext[1..]);
             }
         }
 
@@ -647,13 +700,28 @@ impl ToString for Target {
 
             yey.sort();
 
-            for sext in yey {
-                if bs {
-                    exts.push('_');
+            for e in ISET_ORDER.chars() {
+                let mut yey2 = vec![];
+
+                yey.retain(|yy| {
+                    if yy.starts_with(&format!("h{e}")) {
+                        yey2.push(yy.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                yey2.sort();
+
+                for hext in yey2 {
+                    if bs {
+                        exts.push('_');
+                    }
+                    bs = true;
+                    exts.push('H');
+                    exts.push_str(&hext[1..]);
                 }
-                bs = true;
-                exts.push('H');
-                exts.push_str(&sext[1..]);
             }
         }
 
@@ -795,10 +863,12 @@ mod tests {
     #[test_case("riscv32cme", Base::RV32E, "emc" ; "embedded")]
     #[test_case("riscv32Zifencei_acm_i", Base::RV32I, "imacZifencei" ; "with Z extension")]
     #[test_case("riscv32iZifencei_aZicsr_cm", Base::RV32I, "imacZicsr_Zifencei" ; "multiple Zi* extensions")]
-    #[test_case("riscv32iZicsr_Zifencei_Zam_Ztso", Base::RV32I, "iZicsr_Zifencei_Zam_Ztso" ; "multiple Z* extensions")]
+    #[test_case("riscv32iZicsr_Zifencei_Zam_Ztso", Base::RV32I, "iZicsr_Zifencei_Zam_Ztso" ; "with multiple Z* extensions")]
     #[test_case("riscv32iSvpbmt_c", Base::RV32I, "icSvpbmt" ; "with S extension")]
+    #[test_case("riscv32iSvpbmt_Snn_c", Base::RV32I, "icSvpbmt_Snn" ; "with multiple S* extensions")]
     // currently, no standard H extensions have been ratified
     #[test_case("riscv32iHdef_c", Base::RV32I, "icHdef" ; "with H extension")]
+    #[test_case("riscv32iHdef_Hfgh_c", Base::RV32I, "icHfgh_Hdef" ; "with multiple H* extension")]
     // currently, no standard machine extensions have been ratified
     #[test_case("riscv32iZxmjkl_c", Base::RV32I, "icZxmjkl" ; "with Machine-level extension")]
     #[test_case("riscv32iafdqlcbjtpvnZicsr_Zifencei_Zam_Ztso_Sdef_Hghi_Zxmjkl_Xmno", Base::RV32I,
